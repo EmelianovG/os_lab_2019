@@ -83,7 +83,19 @@ int main(int argc, char **argv) {
            argv[0]);
     return 1;
   }
-
+  FILE* file_min;
+  FILE* file_max;
+  int p[2];
+  if(with_files == true){
+    file_min = fopen("file_min.txt", "w");
+    file_max = fopen("file_max.txt", "w");
+  }
+  else{
+    if(pipe(p) == -1){
+      printf("Error in pipe");
+      return 1;
+    }
+  }
   int *array = malloc(sizeof(int) * array_size);
   GenerateArray(array, array_size, seed);
   int active_child_processes = 0;
@@ -97,14 +109,21 @@ int main(int argc, char **argv) {
       // successful fork
       active_child_processes += 1;
       if (child_pid == 0) {
-        // child process
+        struct MinMax min_max;
+        min_max.min = INT_MAX;
+        min_max.max = INT_MIN;
 
-        // parallel somehow
+        for(int j = i; j<array_size; j+=pnum){
+          if(array[j] < min_max.min) min_max.min=array[j];
+          if(array[j] > min_max.max) min_max.max=array[j];
+        }
 
         if (with_files) {
-          // use files here
+          fwrite(&min_max.min, sizeof(int), 1, file_min);
+          fwrite(&min_max.max, sizeof(int), 1, file_max);
         } else {
-          // use pipe here
+          write(p[1], &min_max.min, sizeof(int));
+          write(p[1], &min_max.max, sizeof(int));
         }
         return 0;
       }
@@ -116,29 +135,42 @@ int main(int argc, char **argv) {
   }
 
   while (active_child_processes > 0) {
-    // your code here
-
+    wait(NULL);
     active_child_processes -= 1;
   }
 
+  if (with_files) {
+    fclose(file_max);
+    fclose(file_min);
+    file_min = fopen("file_min.txt", "r");
+    file_max = fopen("file_max.txt", "r");
+  } else {
+    close(p[1]);
+  }
+  
   struct MinMax min_max;
   min_max.min = INT_MAX;
   min_max.max = INT_MIN;
-
   for (int i = 0; i < pnum; i++) {
     int min = INT_MAX;
     int max = INT_MIN;
 
     if (with_files) {
-      // read from files
+      fread(&min, 1, sizeof(int), file_min);
+      fread(&min, 1, sizeof(int), file_max);
     } else {
-      // read from pipes
+      read(p[0], &min, sizeof(int));
+      read(p[0], &max, sizeof(int));
     }
-
     if (min < min_max.min) min_max.min = min;
     if (max > min_max.max) min_max.max = max;
   }
-
+  if (with_files) {
+    fclose(file_max);
+    fclose(file_min);
+  } else {
+    close(p[0]);
+  }
   struct timeval finish_time;
   gettimeofday(&finish_time, NULL);
 
