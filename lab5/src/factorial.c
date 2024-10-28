@@ -1,3 +1,29 @@
+#include <stdio.h>
+#include <pthread.h>
+#include <getopt.h>
+#include <stdlib.h>
+
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+int fact = 1;
+
+struct factArg {
+    int start;
+    int finish;
+    int module;
+};
+
+void* factThread(void* args) {
+    struct factArg* arg = (struct factArg*) args;
+    pthread_mutex_lock(&mutex);
+    int finish = arg->finish;
+    int module = arg->module;
+    for(int i = arg->start; i<finish; i++){
+        fact*=i;
+        fact%=module;
+    }
+    pthread_mutex_unlock(&mutex);
+}
+
 int main(int argc, char** argv) {
     int k = -1;
     int pnum = -1;
@@ -47,7 +73,26 @@ int main(int argc, char** argv) {
     }
 
     if (k == -1 || pnum == -1 || mod == -1) {
-        printf("Usage: --k num --pnum num --mod num\n");
+        printf("Usage: --k \"num\" --pnum \"num\" --mod \"num\"\n");
         return 1;
     }
+    pthread_t threads[pnum];
+    struct factArg arg[pnum];
+    for(int i = 0; i<pnum; i++){
+        arg[i].start = ((k*i)/pnum)+1;
+        arg[i].finish = ((k*(i+1))/pnum)+1;
+        arg[i].module = mod;
+        //printf("args: %d (%d-%d)\n", i, arg[i].start, arg[i].finish);
+    }
+    for(int i = 0; i<pnum; i++){
+        if (pthread_create(&threads[i], NULL, factThread, (void *)&arg[i])) {
+            printf("Error: pthread_create failed!\n");
+            return 1;
+        }
+    }
+    for (int i = 0; i < pnum; i++) {
+        pthread_join(threads[i], NULL);
+    }
+    printf("Answer: %d\n", fact);
+
 }
