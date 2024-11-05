@@ -14,14 +14,14 @@ struct factArg {
 
 void* factThread(void* args) {
     struct factArg* arg = (struct factArg*) args;
-    pthread_mutex_lock(&mutex);
     int finish = arg->finish;
     int module = arg->module;
     for(int i = arg->start; i<finish; i++){
+        pthread_mutex_lock(&mutex);
         fact*=i;
         fact%=module;
+        pthread_mutex_unlock(&mutex);
     }
-    pthread_mutex_unlock(&mutex);
 }
 
 int main(int argc, char** argv) {
