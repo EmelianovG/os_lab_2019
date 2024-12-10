@@ -99,11 +99,20 @@ int main(int argc, char **argv) {
   }
 
   // TODO: for one server here, rewrite with servers from file
-  unsigned int servers_num = 1;
+  unsigned int servers_num = 0;
+  FILE* fptr = fopen("servers.txt", "r");
+	for(int i = 0; !feof(fptr); i++) {
+    servers_num++;
+	}
+	fclose(fptr);
   struct Server *to = malloc(sizeof(struct Server) * servers_num);
   // TODO: delete this and parallel work between servers
-  to[0].port = 20001;
-  memcpy(to[0].ip, "127.0.0.1", sizeof("127.0.0.1"));
+  fptr = fopen("servers.txt", "r");
+	for(int i = 0; i<servers_num; i++) {
+		fscanf(fptr, "%s %d", to[i].ip, &to[i].port);
+		printf("Server %s:%d\n", to[i].ip, to[i].port);
+	}
+	fclose(fptr);
 
   // TODO: work continiously, rewrite to make parallel
   for (int i = 0; i < servers_num; i++) {
@@ -116,7 +125,7 @@ int main(int argc, char **argv) {
     struct sockaddr_in server;
     server.sin_family = AF_INET;
     server.sin_port = htons(to[i].port);
-    server.sin_addr.s_addr = *((unsigned long *)hostname->h_addr);
+    server.sin_addr.s_addr = *((unsigned long *)hostname->h_addr_list[0]);
 
     int sck = socket(AF_INET, SOCK_STREAM, 0);
     if (sck < 0) {
