@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <pthread.h>
 
 #include <errno.h>
 #include <getopt.h>
@@ -12,10 +13,71 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
+
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 struct Server {
   char ip[255];
   int port;
 };
+int fact = 1;
+
+struct serverArg {
+    uint64_t start;
+    uint64_t finish;
+    uint64_t module;
+    struct Server server;
+};
+
+void* factThread(void* args) {
+  struct serverArg* arg = (struct serverArg*) args;
+  int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+	if (server_fd < 0) {
+		fprintf(stderr, "Can not create server socket!");
+		exit(1);
+	}
+	struct hostent *hostname = gethostbyname(arg->server.ip);
+
+	struct sockaddr_in server;
+	server.sin_family = AF_INET;
+	server.sin_port = htons(arg->server.port);
+	server.sin_addr.s_addr = *((uint64_t*)hostname->h_addr_list[0]);
+
+	if (connect(server_fd, (struct sockaddr*)&server, sizeof(server)) < 0) {
+		fprintf(stderr, "Can not connect to server!");
+		exit(1);
+	}
+
+  uint64_t finish = arg->finish;
+  uint64_t module = arg->module;
+  uint64_t start = arg->start;
+  char task[sizeof(uint64_t) * 3];
+  memcpy(task, &start, sizeof(uint64_t));
+  memcpy(task + sizeof(uint64_t), &finish, sizeof(uint64_t));
+  memcpy(task + 2 * sizeof(uint64_t), &module, sizeof(uint64_t));
+
+	if (send(server_fd, task, sizeof(task), 0) < 0) {
+    fprintf(stderr, "Send failed\n");
+    exit(1);
+  }
+
+  printf("%s:%d send: %lu %lu %lu\n", arg->server.ip, arg->server.port, start, finish, module);
+
+	char response[sizeof(uint64_t)];
+  if (recv(server_fd, response, sizeof(response), 0) < 0) {
+    fprintf(stderr, "Recieve failed\n");
+    exit(1);
+  }
+
+  uint64_t tmp = 0;
+  memcpy(&tmp, response, sizeof(uint64_t));
+  printf("%s:%d answer: %lu\n", arg->server.ip, arg->server.port, tmp);
+  
+  pthread_mutex_lock(&mutex);
+  fact = MultModulo(fact, tmp, module);
+  pthread_mutex_unlock(&mutex);
+  
+  close(server_fd);  
+}
 
 uint64_t MultModulo(uint64_t a, uint64_t b, uint64_t mod) {
   uint64_t result = 0;
@@ -106,7 +168,7 @@ int main(int argc, char **argv) {
 	}
 	fclose(fptr);
   struct Server *to = malloc(sizeof(struct Server) * servers_num);
-  // TODO: delete this and parallel work between servers
+
   fptr = fopen("servers.txt", "r");
 	for(int i = 0; i<servers_num; i++) {
 		fscanf(fptr, "%s %d", to[i].ip, &to[i].port);
@@ -114,58 +176,23 @@ int main(int argc, char **argv) {
 	}
 	fclose(fptr);
 
-  // TODO: work continiously, rewrite to make parallel
+  pthread_t threads[servers_num];
+  struct serverArg arg[servers_num];
+  for(int i = 0; i<servers_num; i++){
+      arg[i].start = ((k*i)/servers_num)+1;
+      arg[i].finish = ((k*(i+1))/servers_num)+1;
+      arg[i].module = mod;
+      arg[i].server = to[i];
+      //printf("args: %d (%d-%d)\n", i, arg[i].start, arg[i].finish);
+  }
+  for(int i = 0; i<servers_num; i++){
+      if (pthread_create(&threads[i], NULL, factThread, (void *)&arg[i])) {
+          printf("Error: pthread_create failed!\n");
+          return 1;
+      }
+  }
   for (int i = 0; i < servers_num; i++) {
-    struct hostent *hostname = gethostbyname(to[i].ip);
-    if (hostname == NULL) {
-      fprintf(stderr, "gethostbyname failed with %s\n", to[i].ip);
-      exit(1);
-    }
-
-    struct sockaddr_in server;
-    server.sin_family = AF_INET;
-    server.sin_port = htons(to[i].port);
-    server.sin_addr.s_addr = *((unsigned long *)hostname->h_addr_list[0]);
-
-    int sck = socket(AF_INET, SOCK_STREAM, 0);
-    if (sck < 0) {
-      fprintf(stderr, "Socket creation failed!\n");
-      exit(1);
-    }
-
-    if (connect(sck, (struct sockaddr *)&server, sizeof(server)) < 0) {
-      fprintf(stderr, "Connection failed\n");
-      exit(1);
-    }
-
-    // TODO: for one server
-    // parallel between servers
-    uint64_t begin = 1;
-    uint64_t end = k;
-
-    char task[sizeof(uint64_t) * 3];
-    memcpy(task, &begin, sizeof(uint64_t));
-    memcpy(task + sizeof(uint64_t), &end, sizeof(uint64_t));
-    memcpy(task + 2 * sizeof(uint64_t), &mod, sizeof(uint64_t));
-
-    if (send(sck, task, sizeof(task), 0) < 0) {
-      fprintf(stderr, "Send failed\n");
-      exit(1);
-    }
-
-    char response[sizeof(uint64_t)];
-    if (recv(sck, response, sizeof(response), 0) < 0) {
-      fprintf(stderr, "Recieve failed\n");
-      exit(1);
-    }
-
-    // TODO: from one server
-    // unite results
-    uint64_t answer = 0;
-    memcpy(&answer, response, sizeof(uint64_t));
-    printf("answer: %llu\n", answer);
-
-    close(sck);
+      pthread_join(threads[i], NULL);
   }
   free(to);
 
