@@ -19,7 +19,7 @@ struct Server {
   char ip[255];
   int port;
 };
-int fact = 1;
+uint64_t fact = 1;
 
 struct serverArg {
     uint64_t start;
@@ -27,6 +27,19 @@ struct serverArg {
     uint64_t module;
     struct Server server;
 };
+
+uint64_t MultModulo(uint64_t a, uint64_t b, uint64_t mod) {
+  uint64_t result = 0;
+  a = a % mod;
+  while (b > 0) {
+    if (b % 2 == 1)
+      result = (result + a) % mod;
+    a = (a * 2) % mod;
+    b /= 2;
+  }
+
+  return result % mod;
+}
 
 void* factThread(void* args) {
   struct serverArg* arg = (struct serverArg*) args;
@@ -79,18 +92,6 @@ void* factThread(void* args) {
   close(server_fd);  
 }
 
-uint64_t MultModulo(uint64_t a, uint64_t b, uint64_t mod) {
-  uint64_t result = 0;
-  a = a % mod;
-  while (b > 0) {
-    if (b % 2 == 1)
-      result = (result + a) % mod;
-    a = (a * 2) % mod;
-    b /= 2;
-  }
-
-  return result % mod;
-}
 
 bool ConvertStringToUI64(const char *str, uint64_t *val) {
   char *end = NULL;
@@ -163,14 +164,10 @@ int main(int argc, char **argv) {
   // TODO: for one server here, rewrite with servers from file
   unsigned int servers_num = 0;
   FILE* fptr = fopen("servers.txt", "r");
+  struct Server *to = malloc(sizeof(struct Server) * 10);
+		printf("Servers finder started\n");
 	for(int i = 0; !feof(fptr); i++) {
     servers_num++;
-	}
-	fclose(fptr);
-  struct Server *to = malloc(sizeof(struct Server) * servers_num);
-
-  fptr = fopen("servers.txt", "r");
-	for(int i = 0; i<servers_num; i++) {
 		fscanf(fptr, "%s %d", to[i].ip, &to[i].port);
 		printf("Server %s:%d\n", to[i].ip, to[i].port);
 	}
@@ -194,7 +191,9 @@ int main(int argc, char **argv) {
   for (int i = 0; i < servers_num; i++) {
       pthread_join(threads[i], NULL);
   }
-  free(to);
 
+  free(to);
+  printf("Final answer: %lu\n", fact);
+          
   return 0;
 }

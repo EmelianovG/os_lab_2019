@@ -12,11 +12,14 @@
 #include <sys/types.h>
 
 #include "pthread.h"
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+uint64_t fact = 1;
+int port = -1;
 
-struct FactorialArgs {
-  uint64_t begin;
-  uint64_t end;
-  uint64_t mod;
+struct factArg {
+  uint64_t start;
+  uint64_t finish;
+  uint64_t module;
 };
 
 uint64_t MultModulo(uint64_t a, uint64_t b, uint64_t mod) {
@@ -32,22 +35,22 @@ uint64_t MultModulo(uint64_t a, uint64_t b, uint64_t mod) {
   return result % mod;
 }
 
-uint64_t Factorial(const struct FactorialArgs *args) {
-  uint64_t ans = 1;
+uint64_t Factorial(const struct factArg *args) {
+	uint64_t ans = 1;
+	for (uint64_t i = args->start; i < args->finish; ++i) {
+		ans = MultModulo(ans, i, args->module);
+	}
 
-  // TODO: your code here
-
-  return ans;
+	return ans;
 }
 
 void *ThreadFactorial(void *args) {
-  struct FactorialArgs *fargs = (struct FactorialArgs *)args;
-  return (void *)(uint64_t *)Factorial(fargs);
+	struct factArg *fargs = (struct factArg *)args;
+	return (void *)(uint64_t *)Factorial(fargs);
 }
 
 int main(int argc, char **argv) {
   int tnum = -1;
-  int port = -1;
 
   while (true) {
     int current_optind = optind ? optind : 1;
@@ -87,9 +90,22 @@ int main(int argc, char **argv) {
   }
 
   if (port == -1 || tnum == -1) {
-    fprintf(stderr, "Using: %s --port 20001 --tnum 4\n", argv[0]);
+    fprintf(stderr, "Using: %s --port 1 --tnum 4\n", argv[0]);
     return 1;
   }
+
+  unsigned int servers_num = 0;
+  FILE* fptr = fopen("servers.txt", "r");
+	int serv;
+  char a[255];
+  int b;
+  for(int i = 0; !feof(fptr); i++) {
+    if(i == port){
+		  fscanf(fptr, "%s %d", a, &serv);
+      break;
+    }
+		fscanf(fptr, "%s %d", a, &b);
+	}
 
   int server_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (server_fd < 0) {
@@ -99,7 +115,7 @@ int main(int argc, char **argv) {
 
   struct sockaddr_in server;
   server.sin_family = AF_INET;
-  server.sin_port = htons((uint16_t)port);
+  server.sin_port = htons((uint16_t)serv);
   server.sin_addr.s_addr = htonl(INADDR_ANY);
 
   int opt_val = 1;
@@ -107,7 +123,7 @@ int main(int argc, char **argv) {
 
   int err = bind(server_fd, (struct sockaddr *)&server, sizeof(server));
   if (err < 0) {
-    fprintf(stderr, "Can not bind to socket!");
+    fprintf(stderr, "Can not bind to socket!\n");
     return 1;
   }
 
@@ -144,9 +160,6 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Client send wrong data format\n");
         break;
       }
-
-      pthread_t threads[tnum];
-
       uint64_t begin = 0;
       uint64_t end = 0;
       uint64_t mod = 0;
@@ -154,34 +167,28 @@ int main(int argc, char **argv) {
       memcpy(&end, from_client + sizeof(uint64_t), sizeof(uint64_t));
       memcpy(&mod, from_client + 2 * sizeof(uint64_t), sizeof(uint64_t));
 
-      fprintf(stdout, "Receive: %llu %llu %llu\n", begin, end, mod);
-
-      struct FactorialArgs args[tnum];
-      for (uint32_t i = 0; i < tnum; i++) {
-        // TODO: parallel somehow
-        args[i].begin = 1;
-        args[i].end = 1;
-        args[i].mod = mod;
-
-        if (pthread_create(&threads[i], NULL, ThreadFactorial,
-                           (void *)&args[i])) {
-          printf("Error: pthread_create failed!\n");
-          return 1;
-        }
+      fprintf(stdout, "Receive: %lu %lu %lu\n", begin, end, mod);
+      pthread_t threads[tnum];
+      struct factArg arg[tnum];
+      for(int i = begin; i<tnum; i++){
+          arg[i].start = ((end*i)/tnum)+1;
+          arg[i].finish = ((end*(i+1))/tnum)+1;
+          arg[i].module = mod;
       }
-
-      uint64_t total = 1;
-      for (uint32_t i = 0; i < tnum; i++) {
-        uint64_t result = 0;
-        pthread_join(threads[i], (void **)&result);
-        total = MultModulo(total, result, mod);
+      for(int i = 0; i<tnum; i++){
+          if (pthread_create(&threads[i], NULL, ThreadFactorial, (void *)&arg[i])) {
+              printf("Error: pthread_create failed!\n");
+              return 1;
+          }
       }
-
-      printf("Total: %llu\n", total);
-
-      char buffer[sizeof(total)];
-      memcpy(buffer, &total, sizeof(total));
-      err = send(client_fd, buffer, sizeof(total), 0);
+			for (uint32_t i = 0; i < tnum; i++) {
+				uint64_t result = 0;
+				pthread_join(threads[i], (void **)&result);
+				fact = MultModulo(fact, result, mod);
+			}
+      char buffer[sizeof(fact)];
+      memcpy(buffer, &fact, sizeof(fact));
+      err = send(client_fd, buffer, sizeof(fact), 0);
       if (err < 0) {
         fprintf(stderr, "Can't send data to client\n");
         break;
