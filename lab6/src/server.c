@@ -10,8 +10,9 @@
 #include <netinet/ip.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-
+#include "library.h"
 #include "pthread.h"
+
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 uint64_t fact = 1;
 int port = -1;
@@ -21,19 +22,6 @@ struct factArg {
   uint64_t finish;
   uint64_t module;
 };
-
-uint64_t MultModulo(uint64_t a, uint64_t b, uint64_t mod) {
-  uint64_t result = 0;
-  a = a % mod;
-  while (b > 0) {
-    if (b % 2 == 1)
-      result = (result + a) % mod;
-    a = (a * 2) % mod;
-    b /= 2;
-  }
-
-  return result % mod;
-}
 
 uint64_t Factorial(const struct factArg *args) {
 	uint64_t ans = 1;
@@ -120,7 +108,6 @@ int main(int argc, char **argv) {
 
   int opt_val = 1;
   setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt_val, sizeof(opt_val));
-
   int err = bind(server_fd, (struct sockaddr *)&server, sizeof(server));
   if (err < 0) {
     fprintf(stderr, "Can not bind to socket!\n");
@@ -170,12 +157,13 @@ int main(int argc, char **argv) {
       fprintf(stdout, "Receive: %lu %lu %lu\n", begin, end, mod);
       pthread_t threads[tnum];
       struct factArg arg[tnum];
-      for(int i = begin; i<tnum; i++){
-          arg[i].start = ((end*i)/tnum)+1;
-          arg[i].finish = ((end*(i+1))/tnum)+1;
+      for(int i = 0; i<tnum; i++){
+          arg[i].start = begin+(((end-begin)*i)/tnum)+1;
+          arg[i].finish = begin+(((end-begin)*(i+1))/tnum)+1;
           arg[i].module = mod;
       }
       for(int i = 0; i<tnum; i++){
+        printf("params port %d: %lu %lu %lu\n", serv, arg[i].start, arg[i].finish, arg[i].module);
           if (pthread_create(&threads[i], NULL, ThreadFactorial, (void *)&arg[i])) {
               printf("Error: pthread_create failed!\n");
               return 1;
