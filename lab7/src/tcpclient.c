@@ -20,8 +20,8 @@ int main(int argc, char *argv[]) {
     printf("Too few arguments \n");
     exit(1);
   }
-
-  if ((fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+  fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (fd < 0) {
     perror("socket creating");
     exit(1);
   }
@@ -29,7 +29,7 @@ int main(int argc, char *argv[]) {
   memset(&servaddr, 0, SIZE);
   servaddr.sin_family = AF_INET;
 
-  if (inet_pton(AF_INET, argv[1], &servaddr.sin_addr) <= 0) {
+  if (inet_pton(AF_INET, argv[1], &servaddr.sin_addr) < 0) {
     perror("bad address");
     exit(1);
   }
